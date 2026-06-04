@@ -113,10 +113,16 @@ object PrismAppControl {
 	}
 
 	@JvmStatic fun freeze(app: PrismAppInfo): Boolean {
-		val frozen = runAppControl(app.context(), app.user, "freeze pkg=${app.packageName}") {
-			ensureAppHiddenState(this, app.packageName, true)
+		val context = app.context()
+		val profile = app.user
+		val pkg = app.packageName
+		val isSystem = app.isSystem
+
+		val frozen = runAppControl(context, profile, "freeze pkg=$pkg") {
+			ensureAppHiddenState(this, pkg, true)
 		} ?: false
-		if (frozen && app.isSystem) stopTreatingHiddenSysAppAsDisabled(app)
+
+		if (frozen && isSystem) stopTreatingHiddenSysAppAsDisabled(context, profile, pkg)
 		return frozen
 	}
 
@@ -135,10 +141,15 @@ object PrismAppControl {
 		return false
 	}
 
-	@JvmStatic fun setSuspended(app: PrismAppInfo, suspended: Boolean) =
-		runAppControl(app.context(), app.user, "set suspended pkg=${app.packageName} suspended=$suspended") {
-			setPackageSuspended(this, app.packageName, suspended)
+	@JvmStatic fun setSuspended(app: PrismAppInfo, suspended: Boolean): Boolean {
+		val context = app.context()
+		val profile = app.user
+		val pkg = app.packageName
+
+		return runAppControl(context, profile, "set suspended pkg=$pkg suspended=$suspended") {
+			setPackageSuspended(this, pkg, suspended)
 		} == true
+	}
 	private fun setPackageSuspended(context: Context, pkg: String, suspended: Boolean)
 			= setPackagesSuspended(context, arrayOf(pkg), suspended).isEmpty()
 	fun setPackagesSuspended(context: Context, pkgs: Array<String>, suspended: Boolean): Array<String>
@@ -189,15 +200,24 @@ object PrismAppControl {
 		}
 	}
 
-	@JvmStatic fun unfreezeInitiallyFrozenSystemApp(app: PrismAppInfo) =
-		runAppControl(app.context(), app.user, "unfreeze initial system pkg=${app.packageName}") {
-			PrismManager.ensureAppHiddenState(this, app.packageName, false)
-		}
-			?.also { if (it) stopTreatingHiddenSysAppAsDisabled(app) }
+	@JvmStatic fun unfreezeInitiallyFrozenSystemApp(app: PrismAppInfo): Boolean? {
+		val context = app.context()
+		val profile = app.user
+		val pkg = app.packageName
 
-	private fun stopTreatingHiddenSysAppAsDisabled(app: PrismAppInfo) =
-		runAppControl(app.context(), app.user, "mark hidden system cloned pkg=${app.packageName}") {
-			ClonedHiddenSystemApps.setCloned(this, app.packageName)
+		return runAppControl(context, profile, "unfreeze initial system pkg=$pkg") {
+			PrismManager.ensureAppHiddenState(this, pkg, false)
+		}
+			?.also { if (it) stopTreatingHiddenSysAppAsDisabled(context, profile, pkg) }
+	}
+
+	private fun stopTreatingHiddenSysAppAsDisabled(
+		context: Context,
+		profile: UserHandle,
+		pkg: String,
+	) =
+		runAppControl(context, profile, "mark hidden system cloned pkg=$pkg") {
+			ClonedHiddenSystemApps.setCloned(this, pkg)
 		}
 
 	private fun <T> runAppControl(context: Context, profile: UserHandle, operation: String, block: Context.() -> T): T? =
